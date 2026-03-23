@@ -128,24 +128,106 @@ function drawEffects() {
             effects.splice(i, 1);
             continue;
         }
-        ctx.fillStyle = `rgba(255, 100, 0, ${effect.duration / effect.maxDuration * 0.8})`;
-        ctx.beginPath();
-        ctx.arc(effect.x, effect.y, effect.radius, 0, Math.PI * 2);
-        ctx.fill();
+        
+        // 激光预警效果
+        if (effect.isLaser) {
+            const alpha = effect.duration / effect.maxDuration;
+            ctx.strokeStyle = `rgba(255, 0, 0, ${alpha * 0.8})`;
+            ctx.lineWidth = 3;
+            ctx.setLineDash([10, 10]);
+            ctx.beginPath();
+            ctx.moveTo(effect.x, effect.y);
+            const angle = Math.atan2(effect.targetY - effect.y, effect.targetX - effect.x);
+            ctx.lineTo(effect.x + Math.cos(angle) * 800, effect.y + Math.sin(angle) * 800);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            // 预警点
+            ctx.fillStyle = `rgba(255, 0, 0, ${alpha})`;
+            ctx.beginPath();
+            ctx.arc(effect.targetX, effect.targetY, 20 * (1-alpha), 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            // 普通爆炸效果
+            ctx.fillStyle = `rgba(255, 100, 0, ${effect.duration / effect.maxDuration * 0.8})`;
+            ctx.beginPath();
+            ctx.arc(effect.x, effect.y, effect.radius, 0, Math.PI * 2);
+            ctx.fill();
+        }
     }
 }
 
 function drawBoss() {
     if (!boss) return;
-    ctx.fillStyle = 'darkgreen';
+    
+    // Boss身体阴影效果
+    ctx.fillStyle = 'rgba(0, 50, 0, 0.3)';
+    ctx.beginPath();
+    ctx.roundRect(boss.x - boss.width/2 + 10, boss.y - boss.height/2 + 10, boss.width, boss.height, 20);
+    ctx.fill();
+    
+    // 根据阶段改变颜色
+    const bodyColor = boss.enraged ? 'darkred' : 'darkgreen';
+    const headColor = boss.enraged ? 'red' : 'green';
+    const glowColor = boss.enraged ? 'rgba(255, 0, 0, 0.5)' : 'rgba(0, 255, 0, 0.3)';
+    
+    // 发光效果
+    ctx.fillStyle = glowColor;
+    ctx.beginPath();
+    ctx.arc(boss.x, boss.y, boss.width * 0.8, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Boss身体
+    ctx.fillStyle = bodyColor;
     ctx.beginPath();
     ctx.roundRect(boss.x - boss.width/2, boss.y - boss.height/2, boss.width, boss.height, 20);
     ctx.fill();
-    ctx.fillStyle = 'green';
+    
+    // Boss头部（西兰花形状）
+    ctx.fillStyle = headColor;
     ctx.beginPath();
     ctx.arc(boss.x - 40, boss.y - 30, 25, 0, Math.PI * 2);
     ctx.arc(boss.x + 40, boss.y - 30, 25, 0, Math.PI * 2);
     ctx.arc(boss.x, boss.y - 50, 30, 0, Math.PI * 2);
+    ctx.arc(boss.x - 20, boss.y - 60, 20, 0, Math.PI * 2);
+    ctx.arc(boss.x + 20, boss.y - 60, 20, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // 愤怒时的眼睛
+    if (boss.enraged) {
+        ctx.fillStyle = 'yellow';
+        ctx.beginPath();
+        ctx.arc(boss.x - 30, boss.y, 8, 0, Math.PI * 2);
+        ctx.arc(boss.x + 30, boss.y, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'red';
+        ctx.beginPath();
+        ctx.arc(boss.x - 30, boss.y, 4, 0, Math.PI * 2);
+        ctx.arc(boss.x + 30, boss.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+    } else {
+        // 普通眼睛
+        ctx.fillStyle = 'white';
+        ctx.beginPath();
+        ctx.arc(boss.x - 30, boss.y, 8, 0, Math.PI * 2);
+        ctx.arc(boss.x + 30, boss.y, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'black';
+        ctx.beginPath();
+        ctx.arc(boss.x - 30, boss.y, 4, 0, Math.PI * 2);
+        ctx.arc(boss.x + 30, boss.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    // 嘴巴
+    ctx.fillStyle = boss.enraged ? 'darkred' : 'darkgreen';
+    ctx.beginPath();
+    if (boss.enraged) {
+        // 愤怒时张开嘴
+        ctx.arc(boss.x, boss.y + 20, 15, 0, Math.PI, false);
+    } else {
+        ctx.arc(boss.x, boss.y + 20, 10, 0, Math.PI, false);
+    }
     ctx.fill();
 }
 
@@ -164,37 +246,104 @@ function drawUI() {
     }
     if (gameState === 'bossFight' && boss) {
         const barWidth = CANVAS_WIDTH - 200;
-        ctx.fillStyle = 'grey'; ctx.fillRect(100, CANVAS_HEIGHT - 30, barWidth, 20);
-        ctx.fillStyle = 'purple'; ctx.fillRect(100, CANVAS_HEIGHT - 30, (boss.health / boss.maxHealth) * barWidth, 20);
-        ctx.strokeStyle = 'black'; ctx.strokeRect(100, CANVAS_HEIGHT - 30, barWidth, 20);
-        ctx.fillStyle = 'white'; ctx.font = '16px sans-serif';
+        const healthPercent = boss.health / boss.maxHealth;
+        
+        // 血条背景
+        ctx.fillStyle = 'grey'; ctx.fillRect(100, CANVAS_HEIGHT - 40, barWidth, 25);
+        
+        // 血条颜色根据阶段变化
+        const healthColor = boss.enraged ? 'red' : 'purple';
+        ctx.fillStyle = healthColor; 
+        ctx.fillRect(100, CANVAS_HEIGHT - 40, healthPercent * barWidth, 25);
+        
+        // 血条边框
+        ctx.strokeStyle = 'black'; ctx.lineWidth = 2;
+        ctx.strokeRect(100, CANVAS_HEIGHT - 40, barWidth, 25);
+        
+        // Boss名称
+        ctx.fillStyle = 'white'; ctx.font = 'bold 18px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('西兰花巨人 (Broccoli Giant)', CANVAS_WIDTH/2, CANVAS_HEIGHT - 15);
+        const bossName = boss.enraged ? '🔥 狂暴西兰花巨人 (ENRAGED) 🔥' : '西兰花巨人 (Broccoli Giant)';
+        ctx.fillText(bossName, CANVAS_WIDTH/2, CANVAS_HEIGHT - 22);
+        
+        // 血量数值
+        ctx.font = '12px sans-serif';
+        ctx.fillText(`${Math.floor(boss.health)}/${boss.maxHealth}`, CANVAS_WIDTH/2, CANVAS_HEIGHT - 8);
+        
+        // 阶段提示
+        if (boss.enraged) {
+            ctx.fillStyle = 'red'; ctx.font = 'bold 20px sans-serif';
+            ctx.fillText('⚠️ 第二阶段 - 狂暴模式! ⚠️', CANVAS_WIDTH/2, 80);
+        }
+        
         ctx.textAlign = 'left';
     }
 }
 
 function drawGameOver() {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    ctx.fillStyle = 'white'; ctx.font = '60px sans-serif';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)'; 
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    
+    ctx.fillStyle = 'red'; 
+    ctx.font = 'bold 70px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('GAME OVER', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 40);
+    ctx.fillText('💀 GAME OVER 💀', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 60);
+    
+    ctx.fillStyle = 'white';
     ctx.font = '30px sans-serif';
-    ctx.fillText('Final Score: ' + score, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
+    ctx.fillText('布丁勇者被击败了...', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+    
+    ctx.font = 'bold 28px sans-serif';
+    ctx.fillStyle = 'gold';
+    ctx.fillText(`最终得分: ${score}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 50);
+    
+    ctx.fillStyle = 'lightgray';
     ctx.font = '20px sans-serif';
-    ctx.fillText('Press Enter to Restart', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 70);
+    ctx.fillText('按 Enter 键重新开始', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 100);
     ctx.textAlign = 'left';
 }
 
 function drawGameWon() {
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)'; ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    ctx.fillStyle = 'darkblue'; ctx.font = '60px sans-serif';
+    // 渐变背景
+    const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+    gradient.addColorStop(0, 'rgba(255, 215, 0, 0.9)');
+    gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.9)');
+    gradient.addColorStop(1, 'rgba(255, 215, 0, 0.9)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    
+    // 庆祝文字
+    ctx.fillStyle = 'darkblue'; 
+    ctx.font = 'bold 70px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('YOU WON!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 40);
-    ctx.font = '30px sans-serif';
-    ctx.fillText('你找回了世界的“甜味素”!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
+    ctx.fillText('🎉 胜利! YOU WON! 🎉', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 80);
+    
+    ctx.font = 'bold 35px sans-serif';
+    ctx.fillStyle = 'darkgreen';
+    ctx.fillText('你击败了西兰花巨人!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 20);
+    
+    ctx.font = '28px sans-serif';
+    ctx.fillStyle = 'purple';
+    ctx.fillText('世界的"甜味素"已找回!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 30);
+    
+    ctx.font = 'bold 24px sans-serif';
+    ctx.fillStyle = 'darkred';
+    ctx.fillText(`最终得分: ${score}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 80);
+    
     ctx.font = '20px sans-serif';
-    ctx.fillText('Press Enter to Play Again', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 70);
+    ctx.fillStyle = 'black';
+    ctx.fillText('按 Enter 键再次挑战', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 130);
+    
+    // 装饰性星星
+    for(let i=0; i<10; i++) {
+        const x = 100 + Math.random() * (CANVAS_WIDTH - 200);
+        const y = 100 + Math.random() * (CANVAS_HEIGHT - 200);
+        ctx.fillStyle = `rgba(255, 215, 0, ${0.5 + Math.random() * 0.5})`;
+        ctx.beginPath();
+        ctx.arc(x, y, 5 + Math.random() * 10, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
     ctx.textAlign = 'left';
 }
 
@@ -241,8 +390,12 @@ function createBoss() {
     boss = {
         x: CANVAS_WIDTH / 2, y: 150,
         width: 150, height: 120,
-        maxHealth: 1500, health: 1500,
+        maxHealth: 2000, health: 2000,
         attackTimer: 0, attackPattern: 'rain', moveDirection: 1,
+        phase: 1, enraged: false,
+        summonTimer: 300, // 召唤小怪的计时器
+        spinAttackTimer: 0, // 旋转攻击计时器
+        spinAngle: 0,
     };
     gameState = 'bossFight';
     enemies = [];
@@ -328,25 +481,154 @@ function levelUp() {
 
 function updateEnemiesAndBoss() {
     if (gameState === 'bossFight' && boss) {
-        boss.x += 1.5 * boss.moveDirection;
+        // 阶段转换：血量低于50%进入狂暴模式
+        if (!boss.enraged && boss.health <= boss.maxHealth * 0.5) {
+            boss.enraged = true;
+            boss.phase = 2;
+            // 狂暴时恢复一些血量
+            boss.health += 300;
+            // 产生爆炸效果
+            for(let i=0; i<30; i++) {
+                effects.push({
+                    x: boss.x + (Math.random() - 0.5) * boss.width,
+                    y: boss.y + (Math.random() - 0.5) * boss.height,
+                    radius: 20 + Math.random() * 30,
+                    duration: 40,
+                    maxDuration: 40
+                });
+            }
+        }
+        
+        // Boss移动 - 狂暴时移动更快
+        const moveSpeed = boss.enraged ? 2.5 : 1.5;
+        boss.x += moveSpeed * boss.moveDirection;
         if (boss.x > CANVAS_WIDTH - 100 || boss.x < 100) {
             boss.moveDirection *= -1;
         }
+        
+        // 召唤小怪
+        boss.summonTimer--;
+        if (boss.summonTimer <= 0) {
+            const summonCount = boss.enraged ? 3 : 2;
+            for(let i=0; i<summonCount; i++) {
+                const side = Math.floor(Math.random() * 4);
+                let x, y;
+                switch(side) {
+                    case 0: x = Math.random() * CANVAS_WIDTH; y = -30; break;
+                    case 1: x = CANVAS_WIDTH + 30; y = Math.random() * CANVAS_HEIGHT; break;
+                    case 2: x = Math.random() * CANVAS_WIDTH; y = CANVAS_HEIGHT + 30; break;
+                    case 3: x = -30; y = Math.random() * CANVAS_HEIGHT; break;
+                }
+                // 召唤番茄小兵
+                enemies.push({ 
+                    type: 'tomato', x, y, radius: 15, color: 'red', 
+                    speed: boss.enraged ? 3 : 2, 
+                    health: 20 * level, damage: 10 
+                });
+            }
+            boss.summonTimer = boss.enraged ? 200 : 300;
+        }
+        
+        // 攻击逻辑
         boss.attackTimer--;
+        boss.spinAttackTimer--;
+        
+        // 旋转攻击
+        if (boss.spinAttackTimer > 0) {
+            boss.spinAngle += 0.15;
+            if (boss.spinAttackTimer % 5 === 0) {
+                for(let i=0; i<8; i++) {
+                    const angle = boss.spinAngle + (i * Math.PI / 4);
+                    enemyProjectiles.push({ 
+                        x: boss.x, y: boss.y, 
+                        width: 8, height: 8, 
+                        color: boss.enraged ? 'red' : 'darkgreen', 
+                        speed: boss.enraged ? 6 : 4, 
+                        dx: Math.cos(angle), dy: Math.sin(angle), 
+                        angle: angle, damage: boss.enraged ? 12 : 8 
+                    });
+                }
+            }
+        }
+        
         if (boss.attackTimer <= 0) {
-            if (boss.attackPattern === 'rain') {
-                for(let i=0; i<20; i++) {
-                    enemyProjectiles.push({ x: Math.random() * CANVAS_WIDTH, y: -20, width: 5, height: 15, color: 'green', speed: 3 + Math.random() * 2, dx: 0, dy: 1, angle: Math.PI/2, damage: 8 });
-                }
-                boss.attackTimer = 180;
-                boss.attackPattern = 'shot';
-            } else {
-                const angle = Math.atan2(player.y - boss.y, player.x - boss.x);
-                for(let i=-1; i<=1; i++) {
-                     enemyProjectiles.push({ x: boss.x, y: boss.y, width: 10, height: 10, color: 'darkgreen', speed: 5, dx: Math.cos(angle + i*0.2), dy: Math.sin(angle + i*0.2), angle: angle, damage: 15 });
-                }
-                boss.attackTimer = 120;
-                boss.attackPattern = 'rain';
+            const patterns = boss.enraged ? 
+                ['rain', 'shot', 'spin', 'laser'] : 
+                ['rain', 'shot', 'spin'];
+            const currentPattern = patterns[Math.floor(Math.random() * patterns.length)];
+            
+            switch(currentPattern) {
+                case 'rain':
+                    // 蔬菜雨 - 狂暴时更密集
+                    const rainCount = boss.enraged ? 30 : 20;
+                    for(let i=0; i<rainCount; i++) {
+                        enemyProjectiles.push({ 
+                            x: Math.random() * CANVAS_WIDTH, y: -20, 
+                            width: 5, height: 15, 
+                            color: boss.enraged ? 'red' : 'green', 
+                            speed: 3 + Math.random() * 3, 
+                            dx: (Math.random() - 0.5) * 0.5, dy: 1, 
+                            angle: Math.PI/2, damage: boss.enraged ? 12 : 8 
+                        });
+                    }
+                    boss.attackTimer = boss.enraged ? 120 : 180;
+                    break;
+                    
+                case 'shot':
+                    // 追踪射击 - 狂暴时发射更多
+                    const angle = Math.atan2(player.y - boss.y, player.x - boss.x);
+                    const shotCount = boss.enraged ? 5 : 3;
+                    const spread = boss.enraged ? 0.3 : 0.2;
+                    for(let i=-(shotCount-1)/2; i<=(shotCount-1)/2; i++) {
+                         enemyProjectiles.push({ 
+                             x: boss.x, y: boss.y, 
+                             width: 10, height: 10, 
+                             color: boss.enraged ? 'darkred' : 'darkgreen', 
+                             speed: boss.enraged ? 7 : 5, 
+                             dx: Math.cos(angle + i*spread), 
+                             dy: Math.sin(angle + i*spread), 
+                             angle: angle, damage: boss.enraged ? 20 : 15 
+                         });
+                    }
+                    boss.attackTimer = boss.enraged ? 80 : 120;
+                    break;
+                    
+                case 'spin':
+                    // 开始旋转攻击
+                    boss.spinAttackTimer = boss.enraged ? 120 : 90;
+                    boss.attackTimer = boss.enraged ? 180 : 240;
+                    break;
+                    
+                case 'laser':
+                    // 激光预警 + 发射
+                    effects.push({
+                        x: boss.x, y: boss.y + 50,
+                        radius: 20,
+                        duration: 60,
+                        maxDuration: 60,
+                        isLaser: true,
+                        targetX: player.x,
+                        targetY: player.y
+                    });
+                    setTimeout(() => {
+                        if(gameState === 'bossFight' && boss) {
+                            const laserAngle = Math.atan2(player.y - boss.y, player.x - boss.x);
+                            for(let d=0; d<600; d+=20) {
+                                enemyProjectiles.push({
+                                    x: boss.x + Math.cos(laserAngle) * d,
+                                    y: boss.y + Math.sin(laserAngle) * d,
+                                    width: 15, height: 15,
+                                    color: 'purple',
+                                    speed: 0, dx: 0, dy: 0,
+                                    angle: 0, damage: 30,
+                                    isLaser: true,
+                                    life: 30
+                                });
+                            }
+                        }
+                    }, 1000);
+                    boss.attackTimer = 200;
+                    break;
             }
         }
         return;
@@ -388,6 +670,16 @@ function updateProjectiles() {
     [projectiles, enemyProjectiles].forEach(projArray => {
         for (let i = projArray.length - 1; i >= 0; i--) {
             const p = projArray[i];
+            
+            // 激光有生命周期而不是移动
+            if (p.isLaser) {
+                p.life--;
+                if (p.life <= 0) {
+                    projArray.splice(i, 1);
+                }
+                continue;
+            }
+            
             p.x += p.dx * p.speed;
             p.y += p.dy * p.speed;
             if (p.x < -10 || p.x > CANVAS_WIDTH + 10 || p.y < -10 || p.y > CANVAS_HEIGHT + 10) {
