@@ -2,8 +2,8 @@ const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
 // Game constants
-const CANVAS_WIDTH = 800;
-const CANVAS_HEIGHT = 600;
+const CANVAS_WIDTH = 1200;
+const CANVAS_HEIGHT = 800;
 canvas.width = CANVAS_WIDTH;
 canvas.height = CANVAS_HEIGHT;
 
@@ -28,8 +28,31 @@ const player = {
     speed: 4, dx: 0, dy: 0,
     maxHealth: 100, health: 100,
     attackCooldown: 0, attackRate: 30, projectileSpeed: 7, projectileDamage: 10,
+    projectileCount: 1,
     shieldActive: false, shieldDuration: 60, shieldCooldown: 600, shieldTimer: 0,
     exp: 0, expToNextLevel: 100,
+    // Gyro upgrade
+    hasGyro: false,
+    gyroCooldown: 0,
+    gyroDuration: 0,
+    spinAngle: 0,
+    originalAttackRate: null,
+    // Bomb upgrade
+    hasBomb: false,
+    bombCooldown: 0,
+    bombDuration: 0,
+    originalProjectileDamage: null,
+    explosionRadius: 50,
+    // Puppet upgrade
+    hasClone: false,
+    positionHistory: [],
+};
+
+const clone = {
+    x: -100, y: -100, // initially off-screen
+    width: 40, height: 40,
+    color: 'rgba(255, 215, 0, 0.4)', // semi-transparent
+    headColor: 'rgba(255, 0, 0, 0.4)',
 };
 
 // --- Keyboard input state ---
@@ -46,6 +69,10 @@ const upgradePool = [
     { icon: '🟡', title: '闪电 (Lightning)', description: '子弹伤害 +20%', apply: () => player.projectileDamage = Math.ceil(player.projectileDamage * 1.2) },
     { icon: '👟', title: '跑鞋 (Shoes)', description: '移动速度 +10%', apply: () => player.speed *= 1.1 },
     { icon: '🛡️', title: '硬壳 (Hard Shell)', description: '护盾冷却 -15%', apply: () => player.shieldCooldown *= 0.85 },
+    { icon: '🍎', title: '苹果 (Apple)', description: '增加一个枪口', apply: () => player.projectileCount++ },
+    { icon: '🌀', title: '陀螺 (Gyro)', description: '每15秒旋转攻击5秒,攻速+20%', apply: () => { player.hasGyro = true; player.gyroCooldown = 15 * 60; } },
+    { icon: '💣', title: '炸弹 (Bomb)', description: '每15秒子弹变为爆炸子弹, 伤害+20%, 持续5秒', apply: () => { player.hasBomb = true; player.bombCooldown = 15 * 60; } },
+    { icon: '🎎', title: '布偶 (Puppet)', description: '召唤一个模仿你动作的分身', apply: () => player.hasClone = true },
 ];
 
 // --- Drawing Functions ---
@@ -63,6 +90,21 @@ function drawPlayer() {
     ctx.fillStyle = player.headColor;
     ctx.beginPath();
     const headX = player.x + player.width / 2, headY = player.y;
+    ctx.moveTo(headX, headY - 10);
+    ctx.lineTo(headX - 5, headY);
+    ctx.lineTo(headX + 5, headY);
+    ctx.closePath();
+    ctx.fill();
+}
+
+function drawClone() {
+    ctx.fillStyle = clone.color;
+    ctx.beginPath();
+    ctx.roundRect(clone.x, clone.y, clone.width, clone.height, [10]);
+    ctx.fill();
+    ctx.fillStyle = clone.headColor;
+    ctx.beginPath();
+    const headX = clone.x + clone.width / 2, headY = clone.y;
     ctx.moveTo(headX, headY - 10);
     ctx.lineTo(headX - 5, headY);
     ctx.lineTo(headX + 5, headY);
@@ -405,9 +447,23 @@ function createBoss() {
 function resetGame() {
     player.maxHealth = 100; player.health = 100;
     player.speed = 4; player.attackRate = 30; player.projectileDamage = 10;
+    player.projectileCount = 1;
     player.x = CANVAS_WIDTH / 2; player.y = CANVAS_HEIGHT / 2;
     player.shieldTimer = 0; player.shieldActive = false;
     player.exp = 0; player.expToNextLevel = 100;
+    player.hasGyro = false;
+    player.gyroCooldown = 0;
+    player.gyroDuration = 0;
+    player.spinAngle = 0;
+    player.originalAttackRate = null;
+    player.hasBomb = false;
+    player.bombCooldown = 0;
+    player.bombDuration = 0;
+    player.originalProjectileDamage = null;
+    player.hasClone = false;
+    player.positionHistory = [];
+    clone.x = -100;
+    clone.y = -100;
     level = 1;
     enemies = []; projectiles = []; enemyProjectiles = []; experienceOrbs = []; effects = [];
     score = 0;
@@ -417,10 +473,19 @@ function resetGame() {
 
 function updatePlayer() {
     player.x += player.dx; player.y += player.dy;
-    if (player.x < 0) player.x = 0;
-    if (player.x + player.width > CANVAS_WIDTH) player.x = CANVAS_WIDTH - player.width;
-    if (player.y < 0) player.y = 0;
-    if (player.y + player.height > CANVAS_HEIGHT) player.y = CANVAS_HEIGHT - player.height;
+    if (player.x > CANVAS_WIDTH) player.x = 0;
+    if (player.x < 0) player.x = CANVAS_WIDTH;
+    if (player.y > CANVAS_HEIGHT) player.y = 0;
+    if (player.y < 0) player.y = CANVAS_HEIGHT;
+
+    if (player.hasClone) {
+        player.positionHistory.push({x: player.x, y: player.y});
+        if (player.positionHistory.length > 30) { // 30 frames delay
+            const pos = player.positionHistory.shift();
+            clone.x = pos.x;
+            clone.y = pos.y;
+        }
+    }
 
     if (player.shieldTimer > 0) player.shieldTimer--;
     if (keys[' '] && player.shieldTimer <= 0) {
@@ -429,19 +494,88 @@ function updatePlayer() {
         setTimeout(() => player.shieldActive = false, player.shieldDuration * 1000 / 60);
     }
 
+    if (player.hasGyro) {
+        if (player.gyroDuration > 0) {
+            player.gyroDuration--;
+            if (player.gyroDuration <= 0) {
+                player.attackRate = player.originalAttackRate;
+                player.gyroCooldown = 15 * 60; // 15 seconds cooldown
+            }
+        } else {
+            player.gyroCooldown--;
+            if (player.gyroCooldown <= 0) {
+                player.gyroDuration = 5 * 60; // 5 seconds duration
+                player.originalAttackRate = player.attackRate;
+                player.attackRate *= 0.8; // 20% attack speed increase
+            }
+        }
+    }
+
+    if (player.hasBomb) {
+        if (player.bombDuration > 0) {
+            player.bombDuration--;
+            if (player.bombDuration <= 0) {
+                // bomb effect ended
+                player.projectileDamage = player.originalProjectileDamage;
+                player.bombCooldown = 15 * 60; // reset cooldown
+            }
+        } else {
+            player.bombCooldown--;
+            if (player.bombCooldown <= 0) {
+                // start bomb effect
+                player.bombDuration = 5 * 60; // 5 seconds duration
+                player.originalProjectileDamage = player.projectileDamage;
+                player.projectileDamage *= 1.2; // 20% damage increase
+            }
+        }
+    }
+
     player.attackCooldown--;
     if (player.attackCooldown <= 0 && (enemies.length > 0 || boss)) {
-        let target = null;
-        if(boss) {
-            target = boss;
-        } else {
-            target = enemies.reduce((c, e) => { let d = Math.hypot(e.x - player.x, e.y - player.y); return d < c.d ? { e, d } : c; }, { e: null, d: Infinity }).e;
-        }
-        
-        if (target) {
-            const angle = Math.atan2(target.y - player.y, target.x - player.x);
-            projectiles.push({ x: player.x + player.width / 2, y: player.y + player.height / 2, radius: 5, color: 'rgba(255, 215, 0, 1)', speed: player.projectileSpeed, dx: Math.cos(angle), dy: Math.sin(angle), damage: player.projectileDamage });
+        if (player.hasGyro && player.gyroDuration > 0) {
+            player.spinAngle += 0.5;
+            for(let i=0; i<8; i++) {
+                const angle = player.spinAngle + (i * Math.PI / 4);
+                 projectiles.push({ 
+                    x: player.x + player.width / 2, y: player.y + player.height / 2, 
+                    radius: 5, color: 'rgba(255, 215, 0, 1)', 
+                    speed: player.projectileSpeed, 
+                    dx: Math.cos(angle), dy: Math.sin(angle), 
+                    damage: player.projectileDamage,
+                    isExplosive: player.hasBomb && player.bombDuration > 0
+                });
+            }
             player.attackCooldown = player.attackRate;
+        } else {
+            let target = null;
+            if(boss) {
+                target = boss;
+            } else {
+                target = enemies.reduce((c, e) => { let d = Math.hypot(e.x - player.x, e.y - player.y); return d < c.d ? { e, d } : c; }, { e: null, d: Infinity }).e;
+            }
+            
+            if (target) {
+                const angle = Math.atan2(target.y - player.y, target.x - player.x);
+                const numProjectiles = player.projectileCount;
+                const spread = 15; // px between projectiles
+                for (let i = 0; i < numProjectiles; i++) {
+                    const offset = (i - (numProjectiles - 1) / 2) * spread;
+                    const x = player.x + player.width / 2 + offset * Math.cos(angle + Math.PI / 2);
+                    const y = player.y + player.height / 2 + offset * Math.sin(angle + Math.PI / 2);
+                    projectiles.push({ x, y, radius: 5, color: 'rgba(255, 215, 0, 1)', speed: player.projectileSpeed, dx: Math.cos(angle), dy: Math.sin(angle), damage: player.projectileDamage, isExplosive: player.hasBomb && player.bombDuration > 0 });
+                }
+                player.attackCooldown = player.attackRate;
+
+                if (player.hasClone && clone.x > 0) {
+                    const cloneAngle = Math.atan2(target.y - clone.y, target.x - clone.x);
+                    for (let i = 0; i < numProjectiles; i++) {
+                        const offset = (i - (numProjectiles - 1) / 2) * spread;
+                        const x = clone.x + clone.width / 2 + offset * Math.cos(cloneAngle + Math.PI / 2);
+                        const y = clone.y + clone.height / 2 + offset * Math.sin(cloneAngle + Math.PI / 2);
+                        projectiles.push({ x, y, radius: 5, color: 'rgba(255, 215, 0, 0.5)', speed: player.projectileSpeed, dx: Math.cos(cloneAngle), dy: Math.sin(cloneAngle), damage: player.projectileDamage, isExplosive: player.hasBomb && player.bombDuration > 0 });
+                    }
+                }
+            }
         }
     }
     
@@ -663,6 +797,11 @@ function updateEnemiesAndBoss() {
                 }
                 break;
         }
+
+        if (e.x < 0) e.x = CANVAS_WIDTH;
+        if (e.x > CANVAS_WIDTH) e.x = 0;
+        if (e.y < 0) e.y = CANVAS_HEIGHT;
+        if (e.y > CANVAS_HEIGHT) e.y = 0;
     });
 }
 
@@ -682,9 +821,10 @@ function updateProjectiles() {
             
             p.x += p.dx * p.speed;
             p.y += p.dy * p.speed;
-            if (p.x < -10 || p.x > CANVAS_WIDTH + 10 || p.y < -10 || p.y > CANVAS_HEIGHT + 10) {
-                projArray.splice(i, 1);
-            }
+            if (p.x < 0) p.x = CANVAS_WIDTH;
+            if (p.x > CANVAS_WIDTH) p.x = 0;
+            if (p.y < 0) p.y = CANVAS_HEIGHT;
+            if (p.y > CANVAS_HEIGHT) p.y = 0;
         }
     });
 }
@@ -705,18 +845,31 @@ function handleCollisions() {
                 const enemy = enemies[eIndex];
                 const dist = Math.hypot(enemy.x - p.x, enemy.y - p.y);
                 if (dist < (enemy.radius || enemy.size / 2) + p.radius) {
-                    enemy.health -= p.damage;
                     hit = true;
-                    if(enemy.health <= 0){
-                        createExperienceOrb(enemy.x, enemy.y);
-                        enemies.splice(eIndex, 1);
-                        score += 10;
+                    if (p.isExplosive) {
+                        effects.push({x: p.x, y: p.y, radius: player.explosionRadius, duration: 20, maxDuration: 20});
+                        enemies.forEach(e => {
+                            if (Math.hypot(e.x - p.x, e.y - p.y) < player.explosionRadius) {
+                                e.health -= p.damage;
+                            }
+                        });
+                    } else {
+                        enemy.health -= p.damage;
                     }
                     break;
                 }
             }
         }
         if(hit) projectiles.splice(pIndex, 1);
+    }
+
+    for (let eIndex = enemies.length - 1; eIndex >= 0; eIndex--) {
+        const enemy = enemies[eIndex];
+        if (enemy.health <= 0) {
+            createExperienceOrb(enemy.x, enemy.y);
+            enemies.splice(eIndex, 1);
+            score += 10;
+        }
     }
     
     for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
@@ -763,6 +916,7 @@ function draw() {
     clearCanvas();
     drawExperienceOrbs();
     drawPlayer();
+    if(player.hasClone) drawClone();
     if(gameState === 'bossFight') drawBoss();
     drawEnemies();
     drawProjectiles();
