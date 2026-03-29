@@ -46,6 +46,10 @@ const player = {
     // Puppet upgrade
     hasClone: false,
     positionHistory: [],
+    // Ice upgrade
+    hasIce: false,
+    // Magnet upgrade
+    hasMagnet: false,
 };
 
 const clone = {
@@ -65,6 +69,8 @@ const enemySpawnInterval = 100;
 // --- Upgrade Definitions ---
 const upgradePool = [
     { icon: '🔴', title: '辣椒 (Chili)', description: '攻击速度 +15%', apply: () => player.attackRate = Math.max(5, player.attackRate * 0.85) },
+    { icon: '🔵', title: '冰块 (Ice)', description: '攻击附带减速效果', apply: () => player.hasIce = true },
+    { icon: '🟣', title: '磁铁 (Magnet)', description: '自动吸附经验', apply: () => player.hasMagnet = true },
     { icon: '🟢', title: '菠菜 (Spinach)', description: '最大生命值 +20, 并回满', apply: () => { player.maxHealth += 20; player.health = player.maxHealth; } },
     { icon: '🟡', title: '闪电 (Lightning)', description: '子弹伤害 +20%', apply: () => player.projectileDamage = Math.ceil(player.projectileDamage * 1.2) },
     { icon: '👟', title: '跑鞋 (Shoes)', description: '移动速度 +10%', apply: () => player.speed *= 1.1 },
@@ -416,11 +422,11 @@ function createEnemy() {
     if (Math.random() < 0.5) { x = Math.random() < 0.5 ? 0 - 30 : CANVAS_WIDTH + 30; y = Math.random() * CANVAS_HEIGHT; } 
     else { x = Math.random() * CANVAS_WIDTH; y = Math.random() < 0.5 ? 0 - 30 : CANVAS_HEIGHT + 30; }
     
-    const rand = Math.random();
+        const rand = Math.random();
     if (rand < 0.5) {
-         enemies.push({ type: 'tomato', x, y, radius: 15, color: 'red', speed: 2, health: 10 * level, damage: 10 });
+         enemies.push({ type: 'tomato', x, y, radius: 15, color: 'red', speed: 2, originalSpeed: 2, slowed: false, slowTimer: 0, health: 10 * level, damage: 10 });
     } else if (rand < 0.85) {
-        enemies.push({ type: 'carrot', x, y, size: 20, color: 'orange', speed: 1, health: 15 * level, damage: 0, attackCooldown: 120 });
+        enemies.push({ type: 'carrot', x, y, size: 20, color: 'orange', speed: 1, originalSpeed: 1, slowed: false, slowTimer: 0, health: 15 * level, damage: 0, attackCooldown: 120 });
     } else {
         enemies.push({ type: 'potato', x, y, size: 25, color: '#8B4513', health: 30 * level, arming: false, armTime: 180, armTimer: 0, blastRadius: 100, damage: 25 });
     }
@@ -462,6 +468,8 @@ function resetGame() {
     player.originalProjectileDamage = null;
     player.hasClone = false;
     player.positionHistory = [];
+    player.hasIce = false;
+    player.hasMagnet = false;
     clone.x = -100;
     clone.y = -100;
     level = 1;
@@ -579,9 +587,17 @@ function updatePlayer() {
         }
     }
     
-    for (let i = experienceOrbs.length - 1; i >= 0; i--) {
+        for (let i = experienceOrbs.length - 1; i >= 0; i--) {
         const orb = experienceOrbs[i];
-        if (Math.hypot(orb.x - (player.x + player.width/2), orb.y - (player.y + player.height/2)) < 30) {
+        const dist = Math.hypot(orb.x - (player.x + player.width/2), orb.y - (player.y + player.height/2));
+
+        if (player.hasMagnet && dist < 150) {
+            const angle = Math.atan2((player.y + player.height/2) - orb.y, (player.x + player.width/2) - orb.x);
+            orb.x += Math.cos(angle) * 3;
+            orb.y += Math.sin(angle) * 3;
+        }
+
+        if (dist < 30) {
             player.exp += 25;
             experienceOrbs.splice(i, 1);
             if (player.exp >= player.expToNextLevel) {
@@ -769,6 +785,14 @@ function updateEnemiesAndBoss() {
     }
     
     enemies.forEach(e => {
+        if (e.slowed) {
+            e.speed = e.originalSpeed / 2;
+            e.slowTimer--;
+            if (e.slowTimer <= 0) {
+                e.slowed = false;
+                e.speed = e.originalSpeed;
+            }
+        }
         const angle = Math.atan2(player.y - e.y, player.x - e.x);
         const dist = Math.hypot(player.y - e.y, player.x - e.x);
         switch(e.type) {
@@ -846,6 +870,10 @@ function handleCollisions() {
                 const dist = Math.hypot(enemy.x - p.x, enemy.y - p.y);
                 if (dist < (enemy.radius || enemy.size / 2) + p.radius) {
                     hit = true;
+                    if (player.hasIce) {
+                        enemy.slowed = true;
+                        enemy.slowTimer = 180; // 3 seconds at 60fps
+                    }
                     if (p.isExplosive) {
                         effects.push({x: p.x, y: p.y, radius: player.explosionRadius, duration: 20, maxDuration: 20});
                         enemies.forEach(e => {
